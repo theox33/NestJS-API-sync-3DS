@@ -22,18 +22,16 @@ import * as multer from 'multer';
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const basePath = process.env.SAVES_BASE_PATH || '/mnt/3ds-saves';
-    const gameId = req.body.gameId || 'unknown-game';
-    const consoleId = req.body.consoleId || 'unknown-console';
-
-    const dir = path.join(basePath, consoleId, gameId);
+    const dir = path.join(basePath, 'tmp');
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
   filename: (req, file, cb) => {
-    const slot = req.body.slot || 'slot1';
-    cb(null, `${slot}.sav`);
+    // Nom temporaire unique
+    cb(null, Date.now() + '-' + file.originalname);
   },
 });
+
 
 @Controller('saves')
 @UseGuards(ApiKeyGuard)
@@ -53,15 +51,33 @@ export class SavesController {
     @Body('consoleId') consoleId: string,
     @Body('slot') slot: string,
   ) {
+    const basePath = process.env.SAVES_BASE_PATH || '/mnt/3ds-saves';
+
+    const safeGameId = gameId || 'unknown-game';
+    const safeConsoleId = consoleId || 'unknown-console';
+    const safeSlot = slot || 'slot1';
+
+    const finalDir = path.join(basePath, safeConsoleId, safeGameId);
+    fs.mkdirSync(finalDir, { recursive: true });
+
+    const finalPath = path.join(finalDir, `${safeSlot}.sav`);
+
+    // On déplace/renomme le fichier temporaire vers sa destination finale
+    fs.renameSync(file.path, finalPath);
+
+    const relativePath = path.relative(basePath, finalPath);
+
     return {
       message: 'Save uploaded',
-      gameId,
-      consoleId,
-      slot,
-      filename: file?.filename,
-      path: file?.path,
+      gameId: safeGameId,
+      consoleId: safeConsoleId,
+      slot: safeSlot,
+      filename: `${safeSlot}.sav`,
+      path: finalPath,
+      relativePath,
     };
   }
+
 
   @Get('list')
   list(@Query('gameId') gameId?: string) {
