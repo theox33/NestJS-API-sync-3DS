@@ -6,7 +6,7 @@ import * as path from 'path';
 export class SavesService {
   private basePath = process.env.SAVES_BASE_PATH || '/mnt/3ds-saves';
 
-  listSaves(gameId?: string): string[] {
+    listSaves(gameId?: string): string[] {
     const root = this.basePath;
     const results: string[] = [];
 
@@ -18,7 +18,14 @@ export class SavesService {
           walk(fullPath);
         } else {
           const rel = path.relative(root, fullPath);
-          if (!gameId || rel.startsWith(gameId + path.sep)) {
+          const parts = rel.split(path.sep);
+
+          const consoleId = parts[0];
+          const relGameId = parts[1];
+
+          const gameMatches = !gameId || relGameId === gameId;
+
+          if (gameMatches) {
             results.push(rel);
           }
         }
@@ -31,6 +38,7 @@ export class SavesService {
 
     return results;
   }
+
 
   getSaveStream(relativePath: string): fs.ReadStream {
     const fullPath = path.join(this.basePath, relativePath);
