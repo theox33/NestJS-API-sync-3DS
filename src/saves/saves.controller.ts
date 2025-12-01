@@ -13,10 +13,11 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiKeyGuard } from '../auth/api-key.guard';
 import { SavesService } from './saves.service';
-import { Response } from 'express';
+import * as Express from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as multer from 'multer';
+
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -69,7 +70,7 @@ export class SavesController {
   }
 
   @Get('download/:id')
-  download(@Param('id') id: string, @Res() res: Response) {
+  download(@Param('id') id: string, @Res() res: Express.Response) {
     const stream = this.savesService.getSaveStream(id);
     res.setHeader('Content-Disposition', `attachment; filename="${path.basename(id)}"`);
     stream.pipe(res);
