@@ -85,10 +85,39 @@ export class SavesController {
     return { files };
   }
 
-  @Get('download/:id')
-  download(@Param('id') id: string, @Res() res: any) {
-    const stream = this.savesService.getSaveStream(id);
-    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(id)}"`);
-    stream.pipe(res);
+  @Get('download')
+  download(@Query('path') relativePath: string, @Res() res: any) {
+    if (!relativePath) {
+      res.status(400).json({ message: 'Missing "path" query parameter' });
+      return;
+    }
+
+    // Petite protection basique contre le path traversal
+    if (relativePath.includes('..')) {
+      res.status(400).json({ message: 'Invalid path' });
+      return;
+    }
+
+    try {
+      const stream = this.savesService.getSaveStream(relativePath);
+      const filename = path.basename(relativePath);
+
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}"`,
+      );
+      stream.on('error', (err) => {
+        console.error(err);
+        if (!res.headersSent) {
+          res.status(404).json({ message: 'File not found' });
+        }
+      });
+      stream.pipe(res);
+    } catch (e) {
+      console.error(e);
+      if (!res.headersSent) {
+        res.status(500).json({ message: 'Error while reading file' });
+      }
+    }
   }
 }
