@@ -13,10 +13,10 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiKeyGuard } from '../auth/api-key.guard';
 import { SavesService } from './saves.service';
-import * as Express from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as multer from 'multer';
+
 
 
 const storage = multer.diskStorage({
@@ -48,7 +48,7 @@ export class SavesController {
   @Post('upload')
   @UseInterceptors(FileInterceptor('file', { storage }))
   uploadSave(
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: any,
     @Body('gameId') gameId: string,
     @Body('consoleId') consoleId: string,
     @Body('slot') slot: string,
@@ -58,8 +58,8 @@ export class SavesController {
       gameId,
       consoleId,
       slot,
-      filename: file.filename,
-      path: file.path,
+      filename: file?.filename,
+      path: file?.path,
     };
   }
 
@@ -70,7 +70,7 @@ export class SavesController {
   }
 
   @Get('download/:id')
-  download(@Param('id') id: string, @Res() res: Express.Response) {
+  download(@Param('id') id: string, @Res() res: any) {
     const stream = this.savesService.getSaveStream(id);
     res.setHeader('Content-Disposition', `attachment; filename="${path.basename(id)}"`);
     stream.pipe(res);
