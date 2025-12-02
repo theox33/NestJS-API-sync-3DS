@@ -1,70 +1,219 @@
 # 3DS Save Sync API -- v1
 
-Backend : NestJS (Node.js)\
-Stockage : NAS Synology monté en NFS sur `/mnt/3ds-saves`\
-Accès public (via Nginx Proxy Manager) :
+Backend fiable en **NestJS** exposé en HTTPS via **Nginx Proxy
+Manager**\
+Stockage des sauvegardes sur **NAS Synology** via NFS\
+Client final : homebrew Nintendo **3DS** (à venir)
+
+URL publique de l'API :
 
     https://theo-avril.fr/api/3ds
 
-Toutes les routes ci-dessous sont **préfixées** par `/api/3ds` côté
-client 3DS.
+Toutes les routes doivent être appelées par le client avec le préfixe
+`/api/3ds`.
 
-## 1. Authentification
+------------------------------------------------------------------------
 
-L'API utilise une **API key** partagée (V1 simple).
+# 🏗️ 1. Architecture complète
 
-``` http
-x-api-key: <API_KEY>
-```
+                ┌──────────────────────────┐
+                │        Console 3DS       │
+                │  (homebrew sync client)  │
+                └─────────────▲────────────┘
+                              HTTPS
+                 https://theo-avril.fr/api/3ds
+                              │
+                    ┌─────────┴──────────┐
+                    │ Nginx Proxy Manager│
+                    │  (Raspberry Pi)    │
+                    └─────────▲──────────┘
+                              │ HTTP proxy
+                    ┌─────────┴──────────┐
+                    │   VM Proxmox       │
+                    │  3ds-sync-api      │
+                    │  Docker + NestJS   │
+                    └─────────▲──────────┘
+                              │ NFS
+                    ┌─────────┴─────────┐
+                    │   NAS Synology    │
+                    │ /mnt/3ds-saves    │
+                    └───────────────────┘
 
-## 2. Organisation des données
+------------------------------------------------------------------------
 
-### 2.1. Arborescence
+# 🔐 2. Authentification
 
-    <BASE_PATH>/<consoleId>/<gameId>/<slot>.sav
+Toutes les routes requièrent une API key envoyée dans le header :
 
-Exemple :
+    x-api-key: <API_KEY>
+
+Définie dans le fichier `.env` du backend :
+
+    API_KEY=super-secret-key
+
+------------------------------------------------------------------------
+
+# 📁 3. Structure de stockage
+
+Sauvegardes stockées suivant la convention :
+
+    /mnt/3ds-saves/<consoleId>/<gameId>/<slot>.sav
+
+Exemples :
 
     /mnt/3ds-saves/3ds-xyz/pokemon-black/slot1.sav
+    /mmnt/3ds-saves/3ds-abc/zeldabotw/slot2.sav
 
-### 2.2. relativePath
+------------------------------------------------------------------------
 
-Format renvoyé par l'API : `3ds-xyz/pokemon-black/slot1.sav`
+# 🌐 4. Endpoints
 
-## 3. Endpoints
+## 4.1 Health Check
 
-### 3.1 Health
+    GET /saves/health
 
-`GET /saves/health`
+Réponse :
 
-### 3.2 Upload
+``` json
+{"status": "ok"}
+```
 
-`POST /saves/upload` (multipart/form-data)
+------------------------------------------------------------------------
 
-Champs : - file - gameId - consoleId - slot (optionnel)
+## 4.2 Upload d'une sauvegarde
 
-### 3.3 List
+    POST /saves/upload
+    Content-Type: multipart/form-data
 
-`GET /saves/list?gameId=...`
+Champs requis :
 
-### 3.4 Download
+-   `file` : fichier binaire `.sav`
+-   `gameId`
+-   `consoleId`
+-   `slot` (défaut : `slot1`)
 
-`GET /saves/download?path=<relativePath>`
+Réponse :
 
-## 4. Flow client 3DS
+``` json
+{
+  "message": "Save uploaded",
+  "relativePath": "3ds-xyz/pokemon-black/slot1.sav"
+}
+```
 
-1.  Configure API URL + API key
-2.  Upload : POST /saves/upload
-3.  List : GET /saves/list
-4.  Download : GET /saves/download
+------------------------------------------------------------------------
 
-## 5. Variables d'environnement
+## 4.3 Lister les sauvegardes
 
-    API_KEY=...
-    SAVES_BASE_PATH=/mnt/3ds-saves
+    GET /saves/list?gameId=pokemon-black
 
-## 6. Limitations
+Réponse :
 
--   Pas de timestamps
--   Pas de multi-tokens
--   Pas de gestion de conflits
+``` json
+{
+  "files": [
+    "3ds-xyz/pokemon-black/slot1.sav"
+  ]
+}
+```
+
+------------------------------------------------------------------------
+
+## 4.4 Télécharger une sauvegarde
+
+    GET /saves/download?path=3ds-xyz/pokemon-black/slot1.sav
+
+Renvoie le fichier binaire.
+
+------------------------------------------------------------------------
+
+# 🖥️ 5. Installation backend (VM Proxmox)
+
+## 5.1 Installer Docker
+
+    sudo apt update
+    sudo apt install ca-certificates curl gnupg -y
+    # + repository docker + install docker-ce
+
+Puis :
+
+    sudo usermod -aG docker $USER
+
+------------------------------------------------------------------------
+
+## 5.2 Cloner le projet
+
+    mkdir ~/3ds-sync-api
+    cd ~/3ds-sync-api
+
+Copier :
+
+-   Dockerfile\
+-   docker-compose.yml\
+-   src/\
+-   package.json\
+-   nest-cli.json\
+-   tsconfig.json
+
+------------------------------------------------------------------------
+
+## 5.3 Lancer le backend
+
+    docker compose build
+    docker compose up -d
+
+Test :
+
+    curl -H "x-api-key: <API_KEY>" http://localhost:3000/api/saves/health
+
+------------------------------------------------------------------------
+
+# 📡 6. Configuration Nginx Proxy Manager
+
+Custom Location pour `theo-avril.fr/api/3ds` :
+
+-   Location : `/api/3ds`
+-   Forward IP : IP de la VM (ex. `192.168.1.50`)
+-   Forward Port : `3000`
+-   SSL : Let's Encrypt → Force SSL + HTTP/2
+-   **Custom Nginx config :**
+
+```{=html}
+<!-- -->
+```
+    rewrite ^/api/3ds/?(.*)$ /api/$1 break;
+
+------------------------------------------------------------------------
+
+# 📱 7. Prototype de Workflow 3DS
+
+1.  L'utilisateur configure :
+    -   API URL : `https://theo-avril.fr/api/3ds`
+    -   API KEY
+    -   consoleId
+2.  Upload :
+    -   lecture du fichier sur `sdmc:/...`
+    -   POST `/saves/upload`
+3.  Récupération :
+    -   GET `/saves/list`
+    -   choix utilisateur
+    -   GET `/saves/download`
+4.  Écriture sur la SD.
+
+------------------------------------------------------------------------
+
+# 🚀 8. Plans pour la v2
+
+Prévu :
+
+-   Metadata des saves (taille, timestamp, hash)
+-   Token par console
+-   Gestion avancée des conflits
+-   Compression + delta sync éventuel
+-   Interface web de gestion des saves
+
+------------------------------------------------------------------------
+
+# © 9. Licence
+
+Projet personnel -- libre d'utilisation pour usage privé.
